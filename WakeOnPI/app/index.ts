@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, FlatList, StyleSheet, Text, TouchableOpacity } from "react-native";
+import { View, FlatList, StyleSheet, Text, TouchableOpacity, Alert } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import DeviceItem from "../components/DeviceItem";
 import SettingsModal from "../components/SettingsModal";
@@ -8,51 +8,47 @@ import { StatusBar, Platform } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import {devices} from "../api/Logic";
+
 const App = () => {
   const [settingsVisible, setSettingsVisible] = useState(false);
 
-  const defaultDevices = [
-    { id: "1", name: "Gaming PC", status: "Offline", mac: "AA:BB:CC:DD:EE:FF" },
-    { id: "2", name: "NAS Server", status: "Online", mac: "11:22:33:44:55:66" },
-    { id: "3", name: "Media Center", status: "Offline", mac: "77:88:99:AA:BB:CC" },
-  ];
-
-  const STORAGE_KEY = '@wakeonpi_devices';
-  const [devices, setDevices] = React.useState(defaultDevices);
+  // const STORAGE_KEY = '@wakeonpi_devices';
+  // const [devices, setDevices] = React.useState(defaultDevices);
 
   // Load saved devices on mount
-  useEffect(() => {
-    const loadDevices = async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            setDevices(parsed);
-            return;
-          }
-        }
-        // No saved data, save defaults
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(defaultDevices));
-      } catch (e) {
-        console.warn('Failed to load devices from storage', e);
-      }
-    };
+  // useEffect(() => {
+  //   const loadDevices = async () => {
+  //     try {
+  //       const raw = await AsyncStorage.getItem(STORAGE_KEY);
+  //       if (raw) {
+  //         const parsed = JSON.parse(raw);
+  //         if (Array.isArray(parsed)) {
+  //           setDevices(parsed);
+  //           return;
+  //         }
+  //       }
+  //       // No saved data, save defaults
+  //       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(defaultDevices));
+  //     } catch (e) {
+  //       console.warn('Failed to load devices from storage', e);
+  //     }
+  //   };
 
-    loadDevices();
-  }, []);
+  //   loadDevices();
+  // }, []);
 
-  // Save devices whenever they change
-  useEffect(() => {
-    const save = async () => {
-      try {
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(devices));
-      } catch (e) {
-        console.warn('Failed to save devices', e);
-      }
-    };
-    save();
-  }, [devices]);
+  // // Save devices whenever they change
+  // useEffect(() => {
+  //   const save = async () => {
+  //     try {
+  //       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(devices));
+  //     } catch (e) {
+  //       console.warn('Failed to save devices', e);
+  //     }
+  //   };
+  //   save();
+  // }, [devices]);
 
 
   return (
@@ -60,19 +56,32 @@ const App = () => {
       <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
         <StatusBar
           hidden={false}
-          translucent={false} // ensure StatusBar does not overlay content on Android/Expo Go
+          translucent={false}
           backgroundColor="#1E1E1E"
           barStyle="light-content"
         />
+
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoPlaceholder}>
             <Text style={styles.logoText}>LOGO</Text>
           </View>
-          <Text style={styles.headerTitle}>Wake On LAN</Text>
-          <TouchableOpacity onPress={() => setSettingsVisible(true)} style={styles.settingsButton}>
-            <Icon name="settings-outline" size={28} color="#fff" />
-          </TouchableOpacity>
+
+          <Text style={styles.headerTitle}>WakeOnPI</Text>
+
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => Alert.alert('Add pressed')}
+              accessibilityLabel="Add device"
+            >
+              <Icon name="add" size={20} color="#fff" />
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setSettingsVisible(true)} style={styles.settingsButton}>
+              <Icon name="settings-outline" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Device List */}
@@ -132,6 +141,19 @@ const styles = StyleSheet.create({
   },
   settingsButton: {
     padding: 5,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  addButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
   },
   listContainer: {
     padding: 10,
