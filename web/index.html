@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+    <head>
+        <title> WakeOnPI </title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link href="font-awesome/css/fontawesome.css" rel="stylesheet" />
+        <link href="font-awesome/css/brands.css" rel="stylesheet" />
+        <link href="font-awesome/css/solid.css" rel="stylesheet" />
+        <link href="font-awesome/css/sharp-thin.css" rel="stylesheet" />
+        <link href="font-awesome/css/sharp-duotone-thin.css" rel="stylesheet" />
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100vh;
+                background-color: red;
+                font-size: 1rem;
+            }
+
+            #background_canvas {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: black;
+                z-index: -100;
+            }
+
+            #container_main {
+                display: flex;
+                height: 100%;
+                width: 100%;
+                justify-content: center;
+                align-items: center;
+                flex-direction: column;
+            }
+
+            .flex_element {
+                height: auto;
+                width: 85%;
+                max-width: 400px;
+                margin: 0 20px;
+                border: 1px solid white;
+            }
+
+            .flex_row_element {
+                display: flex;
+                flex-direction: row;
+                justify-content: center;
+                align-items: center;
+                gap: 1em;
+            }
+
+            .magic_button {
+                padding: 16px 36px;
+                background-color: #000000;
+                color: white;
+                border: 1px solid white;
+                outline: none;
+                border-radius: 6px;
+                position: relative;
+
+            }
+
+            .magic_button::before {
+                content: '';
+                background: linear-gradient(45deg, #ff0000, #ff7300, #fffb00, #48ff00, #00ffd5, #002bff, #7a00ff, #ff00c8, #ff0000);
+                position: absolute;
+                top: -2px;
+                left:-2px;
+                background-size: 400%;
+                z-index: -1;
+                filter: blur(5px);
+                width: calc(100% + 4px);
+                height: calc(100% + 4px);
+                animation: glowing 20s linear infinite;
+                /* transition: opacity .3s ease-in-out; */
+                border-radius: 10px;
+                opacity: 0;
+            }
+
+            .magic_button:hover {
+                border: none;
+            }
+
+            .magic_button:hover::before {
+                opacity: 1;
+            }
+
+            @keyframes glowing {
+                0% { background-position: 0 0; }
+                50% { background-position: 400% 0; }
+                100% { background-position: 0 0; }
+            }
+
+            
+        </style>
+    </head>
+    <body>
+        <canvas id="background_canvas"></canvas>
+        <div id="container_main">
+            <div class="flex_element">
+                <i class="fa-solid fa-spinner"></i>
+            </div>
+
+            <div class="flex_element flex_row_element">
+                <button class="magic_button">Refresh</button>
+                <button class="magic_button">Start</button>
+            </div>
+        </div>
+        <script> 
+
+        </script>
+    </body>
+</html>
