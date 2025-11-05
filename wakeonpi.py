@@ -7,6 +7,7 @@ Copyright Andreas B. 2025
 import configparser
 import json
 import logging
+import os
 import platform
 import re
 import socket
@@ -143,6 +144,7 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
                     mac = get_mac(ip)
             logger.info(f"Pinged {ip}: {ping_result}")
             self._send_json({"ip": ip, "mac": mac, "ping": ping_result})
+            return
         elif path == "/api/set_ip": 
             if not "ip" in params:
                 self._send_json({"status": False, "status_info": "Missing paramter 'ip'"})
@@ -156,6 +158,7 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
             save_settings()
             reload_cache()
             self._send_json({"status": True, "status_info": f"Updated ip to '{ip}'"})
+            return
         elif path == "/api/set_mac": 
             if not "mac" in params:
                 self._send_json({"status": False, "status_info": "Missing paramter 'mac'"})
@@ -169,6 +172,7 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
             save_settings()
             reload_cache()
             self._send_json({"status": True, "status_info": f"Updated MAC to '{mac}'"})
+            return
         elif path == "/api/wol":
             if ip is None:
                 self._send_json({"wol": False, "wol_info": "No IP endpoint has been set yet"})
@@ -182,14 +186,23 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
                 self._send_json({"wol": False, "wol_info": "Failed to send WOL package"})
             else:
                 self._send_json({"wol": True, "wol_info": ""})
-        elif path == "/favicon.ico":
-            self.send_response(404)
-            self.end_headers()
-            self.wfile.write("404 not found".encode("utf-8"))
-            self.wfile.flush()
+            return
         else:
-            logger.info(f"Unknown endpoint '{self.path}'")
-            self._send_json({"error": "Unknown endpoint"}, 404)
+            super().do_GET()
+
+    def guess_type(self, path):
+        base_type = super().guess_type(path)
+        if base_type == "text/html":
+            return "text/html; charset=utf-8"
+        return base_type
+
+
+    # def send_head(self):
+    #     f = super().send_head()
+    #     if not self.path.startswith("/api"):
+    #         logger.debug(f"Upgraded '{self.path}' to UTF-8")
+    #         self.send_header("Content-Type", "text/html; charset=utf-8")
+    #     return f
 
     def _send_json(self, data, status=200):
         self.send_response(status)
@@ -200,29 +213,12 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
         self.wfile.flush()
 
 
-class FileServer(SimpleHTTPRequestHandler):
-    def do_GET(self):
-        host = self.headers.get("Host", "")
-        if host.split(":")[0] != host:  # Port ignorieren
-            self.send_response(403)
-            self.end_headers()
-            self.wfile.write(b"Forbidden: Host not allowed")
-            return
-        super().do_GET()  # ansonsten normale Verarbeitung
-
 
 if __name__ == "__main__":
-    d = Path("/web").resolve()
-    handler = partial(SimpleHTTPRequestHandler, directory=d)
-    server = HTTPServer(("", port), handler)
-    print(f"Started fileserver on http://{host}")
-    server.serve_forever()
-
-
-
-
+    os.chdir((d := Path("web").resolve()))
+    SimpleHTTPRequestHandler.extensions_map = {k: v + ';charset=UTF-8' for k, v in SimpleHTTPRequestHandler.extensions_map.items()}
     httpd = HTTPServer((host, port), WakeOnPIServer)
-    logger.info(f"Started server on http://{host}:{port}")
+    logger.info(f"Started server on http://{host}:{port} in directory '{d}'")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
