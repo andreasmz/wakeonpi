@@ -40,7 +40,7 @@ def log_exceptions_hook(exc_type: type[BaseException], exc_value: BaseException,
 sys.excepthook = log_exceptions_hook
 
 config = configparser.ConfigParser()
-config.read_dict({"SERVER": {"host": "", "port": ""}, "CACHE": {"ip": "", "mac": ""}})
+config.read_dict({"SERVER": {"host": "", "port": ""}, "CACHE": {"ip": "", "mac": "", "broadcast_ip": ""}})
 config.read("wakeonpi.config")
 
 def save_settings() -> None:
