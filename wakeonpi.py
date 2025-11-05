@@ -78,7 +78,7 @@ def get_mac(ip: str) -> None|str:
         return None 
     return m.group(0).replace("-", ":").upper()
 
-def send_wol_package(ip: str, mac: str, udp_port: int = 9, n: int = 3) -> bool:
+def send_wol_package(ip: str, mac: str, n: int = 3) -> bool:
     mac = mac.upper()
     if not re.match(r"([0-9A-F]{2}[:]){5}([0-9A-F]{2})", mac):
         raise ValueError(f"Invalid MAC '{mac}'")
@@ -90,9 +90,9 @@ def send_wol_package(ip: str, mac: str, udp_port: int = 9, n: int = 3) -> bool:
             for i in range(n):
                 s.sendto(payload, (ip, 9))
         except Exception as ex:
-            logger.error(f"Failed to send WOL package to {ip}:{udp_port} ({mac}): ", exc_info=True)
+            logger.error(f"Failed to send WOL package to {ip} ({mac}): ", exc_info=True)
             return False
-    logger.info(f"WOL package sent to {ip}:{udp_port} ({mac})")
+    logger.info(f"WOL package sent to {ip} ({mac})")
     return True
 
 host = config.get("SERVER", "host")
@@ -110,15 +110,20 @@ mac = None
 ip = None
 
 def reload_cache():
-    global ip, mac
+    global ip, mac, broadcast_ip
     logger.debug(f"Loading values from the config")
     ip = config.get("CACHE", "ip")
     if ip == "":
         ip = None
+    broadcast_ip = config.get("CACHE", "broadcast_ip")
+    if ip is None:
+        broadcast_ip = None
+    elif broadcast_ip == "":
+        broadcast_ip = '.'.join(ip.split(".")[:-1]) + ".255"
     mac = config.get("CACHE", "mac")
     if not re.match(r'([0-9A-F]{2}[:]){5}[0-9A-F]{2}', mac):
         mac = None
-    logger.debug(f"Loaded ip '{ip}' and mac '{mac}' from cache")
+    logger.debug(f"Loaded IP '{ip}', broadcast IP '{broadcast_ip}' and MAC '{mac}' from cache")
 
 reload_cache()
 
@@ -133,7 +138,7 @@ if mac is None and ip is not None:
 
 class WakeOnPIServer(SimpleHTTPRequestHandler):
     def do_GET(self):
-        global ip, mac, domain
+        global ip, broadcast_ip, mac, domain
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         path = parsed.path
@@ -168,6 +173,20 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
             reload_cache()
             self._send_json({"status": True, "status_info": f"Updated ip to '{ip}'"})
             return
+        elif path == "/api/set_broadcast_ip": 
+            if not "ip" in params:
+                self._send_json({"status": False, "status_info": "Missing paramter 'ip'"})
+                return
+            elif len(params["ip"]) != 1:
+                self._send_json({"status": False, "status_info": f"Malformed value for parameter 'ip': '{params['ip']}'"})
+                return
+            broadcast_ip = params["ip"][0]
+            config.set("CACHE", "broadcast_ip", broadcast_ip)
+            logger.info(f"Updating Broadcast IP to '{broadcast_ip}'")
+            save_settings()
+            reload_cache()
+            self._send_json({"status": True, "status_info": f"Updated broadcast IP to '{broadcast_ip}'"})
+            return
         elif path == "/api/set_mac": 
             if not "mac" in params:
                 self._send_json({"status": False, "status_info": "Missing paramter 'mac'"})
@@ -183,15 +202,15 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
             self._send_json({"status": True, "status_info": f"Updated MAC to '{mac}'"})
             return
         elif path == "/api/wol":
-            if ip is None:
-                self._send_json({"wol": False, "wol_info": "No IP endpoint has been set yet"})
+            if broadcast_ip is None:
+                self._send_json({"wol": False, "wol_info": "No Broadcast IP endpoint has been set yet"})
                 return
             if mac is None:
                 mac = get_mac(host)
             if mac is None:
                 self._send_json({"wol": False, "wol_info": "Could not resolve the local MAC address"})
                 return
-            if not send_wol_package(ip, mac):
+            if not send_wol_package(broadcast_ip, mac):
                 self._send_json({"wol": False, "wol_info": "Failed to send WOL package"})
             else:
                 self._send_json({"wol": True, "wol_info": ""})
