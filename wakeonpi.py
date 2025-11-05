@@ -13,7 +13,9 @@ import socket
 import subprocess
 import sys
 import types
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
+from functools import partial
+from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 logger = logging.getLogger("WakeOnPI")
@@ -126,7 +128,7 @@ if mac is None and ip is not None:
         reload_cache()
 
 
-class WakeOnPIServer(BaseHTTPRequestHandler):
+class WakeOnPIServer(SimpleHTTPRequestHandler):
     def do_GET(self):
         global ip, mac
         parsed = urlparse(self.path)
@@ -184,19 +186,41 @@ class WakeOnPIServer(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             self.wfile.write("404 not found".encode("utf-8"))
+            self.wfile.flush()
         else:
-            logger.info(f"Unknown endpoint '{}'")
+            logger.info(f"Unknown endpoint '{self.path}'")
             self._send_json({"error": "Unknown endpoint"}, 404)
 
     def _send_json(self, data, status=200):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(json.dumps(data, indent=2).encode("utf-8"))
+        body = json.dumps(data, indent=2).encode("utf-8")
+        self.wfile.write(body)
+        self.wfile.flush()
 
+
+class FileServer(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        host = self.headers.get("Host", "")
+        if host.split(":")[0] != host:  # Port ignorieren
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(b"Forbidden: Host not allowed")
+            return
+        super().do_GET()  # ansonsten normale Verarbeitung
 
 
 if __name__ == "__main__":
+    d = Path("/web").resolve()
+    handler = partial(SimpleHTTPRequestHandler, directory=d)
+    server = HTTPServer(("", port), handler)
+    print(f"Started fileserver on http://{host}")
+    server.serve_forever()
+
+
+
+
     httpd = HTTPServer((host, port), WakeOnPIServer)
     logger.info(f"Started server on http://{host}:{port}")
     try:

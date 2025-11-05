@@ -159,6 +159,26 @@
             var mac = "";
             var last_start = "";
 
+            async function fetchJSON(url) {
+                try {
+                    const res = await fetch(url, { method: 'GET' });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                        const text = await res.text();
+                        let data;
+                    try {
+                        data = JSON.parse(text); 
+                    } catch {
+                        throw new Error('Invalid response: Response is no JSON');
+                    }
+
+                    return data;
+
+                } catch (err) {
+                    console.error('Failed to fetch ' + url + ":", err.message);
+                    return null;
+                }
+            }
+
             function pulse() {
                 document.getElementById("loaddot1").style.opacity = 1*(((pulse_counter % 4 >= 1)&&(status == Status.Starting))||(status == Status.Online));
                 document.getElementById("loaddot2").style.opacity = 1*(((pulse_counter % 4 >= 2)&&(status == Status.Starting))||(status == Status.Online));
@@ -169,6 +189,25 @@
             function update() {
                 document.getElementById("pcinfo_span").innerHTML = ip + "<br>" + mac;
             }
+
+            async function query() {
+                response = await fetchJSON("http://127.0.0.1:8000/api/ping");
+                if (!response) {
+                    console.log("Failed to query /api/ping");
+                    ip = "";
+                    mac = "";
+                    update();
+                    return
+                }
+
+                console.log(response);
+
+                ip = response["ip"];
+                mac = response["mac"];
+                update();
+            }
+            setInterval(query, 5000);
+
 
             update();
 
