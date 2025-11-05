@@ -10,6 +10,7 @@ import logging
 import os
 import platform
 import re
+import ssl
 import socket
 import subprocess
 import sys
@@ -95,6 +96,7 @@ def send_wol_package(ip: str, mac: str, udp_port: int = 9, n: int = 3) -> bool:
     return True
 
 host = config.get("SERVER", "host")
+domain = config.get("SERVER", "domain")
 try:
     port = config.getint("SERVER", "port")
 except ValueError:
@@ -131,10 +133,17 @@ if mac is None and ip is not None:
 
 class WakeOnPIServer(SimpleHTTPRequestHandler):
     def do_GET(self):
-        global ip, mac
+        global ip, mac, domain
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         path = parsed.path
+
+        if not (d := self.headers.get("Host", "")).endswith(domain):
+            logger.warning(f"Refused connection to host '{d}'")
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(f"403: Forbidden".encode("utf-8"))
+            return
 
         if path == "/api/ping":
             ping_result = False
@@ -196,14 +205,6 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
             return "text/html; charset=utf-8"
         return base_type
 
-
-    # def send_head(self):
-    #     f = super().send_head()
-    #     if not self.path.startswith("/api"):
-    #         logger.debug(f"Upgraded '{self.path}' to UTF-8")
-    #         self.send_header("Content-Type", "text/html; charset=utf-8")
-    #     return f
-
     def _send_json(self, data, status=200):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -218,7 +219,19 @@ if __name__ == "__main__":
     os.chdir((d := Path("web").resolve()))
     SimpleHTTPRequestHandler.extensions_map = {k: v + ';charset=UTF-8' for k, v in SimpleHTTPRequestHandler.extensions_map.items()}
     httpd = HTTPServer((host, port), WakeOnPIServer)
-    logger.info(f"Started server on http://{host}:{port} in directory '{d}'")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ssl_enabled = False
+    if (cert_path := Path("../WakeOnPI.cer")).exists() and (key_path := Path("../WakeOnPI_encrypted.key")).exists():
+        context.load_cert_chain(certfile=cert_path, keyfile=key_path, password=input("SSL Passwort: "))
+        context.load_verify_locations(cert_path)
+        httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+        logger.info(f"Loaded ssl certificate from disk")
+        ssl_enabled = True
+    else:
+        logger.debug(Path("../WakeOnPI.cer").exists())
+        logger.debug(Path("../WakeOnPI_encrypted.key").exists())
+
+    logger.info(f"Started server on http{'s' if ssl_enabled else ''}://{domain}:{port} (IP {host}) in directory '{d}'")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
