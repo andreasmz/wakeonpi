@@ -3,6 +3,7 @@
     <head>
         <title> WakeOnPI </title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="icon" href="favicon.jpeg">
         <link href="font-awesome/css/fontawesome.css" rel="stylesheet" />
         <link href="font-awesome/css/brands.css" rel="stylesheet" />
         <link href="font-awesome/css/solid.css" rel="stylesheet" />
@@ -16,6 +17,8 @@
                 height: 100vh;
                 background-color: red;
                 font-size: 1rem;
+                color: white;
+                font-family: Arial, Helvetica, sans-serif;
             }
 
             #background_canvas {
@@ -35,6 +38,7 @@
                 justify-content: center;
                 align-items: center;
                 flex-direction: column;
+                gap: 30px;
             }
 
             .flex_element {
@@ -42,7 +46,6 @@
                 width: 85%;
                 max-width: 400px;
                 margin: 0 20px;
-                border: 1px solid white;
             }
 
             .flex_row_element {
@@ -53,15 +56,28 @@
                 gap: 1em;
             }
 
+            .flex_column_element {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+            }
+
             .magic_button {
                 padding: 16px 36px;
                 background-color: #000000;
                 color: white;
-                border: 1px solid white;
                 outline: none;
                 border-radius: 6px;
                 position: relative;
+            }
 
+            .magic_button_low {
+                border: 1px solid #868686;
+            }
+
+            .magic_button_high {
+                border: 1px solid white;
             }
 
             .magic_button::before {
@@ -83,6 +99,7 @@
 
             .magic_button:hover {
                 border: none;
+                background-color: #111111;
             }
 
             .magic_button:hover::before {
@@ -95,23 +112,68 @@
                 100% { background-position: 0 0; }
             }
 
+
+            .loaddot {
+                font-size: 5em;
+                transition: opacity 0.3s linear;
+                opacity: 0;
+            }
             
         </style>
     </head>
     <body>
         <canvas id="background_canvas"></canvas>
         <div id="container_main">
-            <div class="flex_element">
-                <i class="fa-solid fa-spinner"></i>
+
+            <div class="flex_element flex_row_element">
+                <i class="fa-brands fa-raspberry-pi" style="font-size: 5em;"></i>
+
+                <span id="loaddot1" class="loaddot fa-solid">•</span>
+                <span id="loaddot2" class="loaddot fa-solid">•</span>
+                <span id="loaddot3" class="loaddot fa-solid">•</span>
+                
+                <div class="flex_column_element">
+                    <i class="fa-solid fa-desktop" style="font-size: 5em;"></i>
+                    <span id="pcinfo_span" style="margin-top: 5px; text-align: center;"> </span>
+                </div>
+                
             </div>
 
             <div class="flex_element flex_row_element">
-                <button class="magic_button">Refresh</button>
-                <button class="magic_button">Start</button>
+                <button class="magic_button magic_button_low">Refresh</button>
+                <button class="magic_button magic_button_high">Start</button>
             </div>
         </div>
         <script> 
 
+            const Status = {
+                Offline: "Offline",
+                Starting: "Starting",
+                Online: "Online"
+            };
+
+            var pulse_counter = 0;
+            var status = Status.Offline;
+
+            var ip = "";
+            var mac = "";
+            var last_start = "";
+
+            function pulse() {
+                document.getElementById("loaddot1").style.opacity = 1*(((pulse_counter % 4 >= 1)&&(status == Status.Starting))||(status == Status.Online));
+                document.getElementById("loaddot2").style.opacity = 1*(((pulse_counter % 4 >= 2)&&(status == Status.Starting))||(status == Status.Online));
+                document.getElementById("loaddot3").style.opacity = 1*(((pulse_counter % 4 >= 3)&&(status == Status.Starting))||(status == Status.Online));
+                pulse_counter++;
+            }
+
+            function update() {
+                document.getElementById("pcinfo_span").innerHTML = ip + "<br>" + mac;
+            }
+
+            update();
+
+
+            setInterval(pulse, 1000);
         </script>
     </body>
 </html>
