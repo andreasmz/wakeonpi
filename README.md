@@ -40,7 +40,7 @@ After=network.target
 type=simple
 ExecStart=python /opt/wakeonpi/wakeonpi.config
 Restart=on-failure
-RestartSec=5
+RestartSec=60
 StandardOutput=append:/var/log/wakeonpi.log
 StandardError=append:/var/log/wakeonpi.log
 

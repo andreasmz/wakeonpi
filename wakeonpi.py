@@ -4,21 +4,24 @@ WakeOnPI by Andreas
 Copyright Andreas B. 2025
 """
 
+import argparse
 import configparser
+import ipaddress
 import json
 import logging
 import os
 import platform
 import re
-import ssl
 import socket
+import ssl
 import subprocess
 import sys
 import types
-from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
-from functools import partial
+from http.server import  HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+from typing import cast, NamedTuple
 from urllib.parse import urlparse, parse_qs
+from uuid import uuid4
 
 logger = logging.getLogger("WakeOnPI")
 logger.setLevel(logging.DEBUG)
@@ -30,6 +33,7 @@ stream_logging_handler.setLevel(logging.DEBUG)
 logger.addHandler(stream_logging_handler)
 
 def log_exceptions_hook(exc_type: type[BaseException], exc_value: BaseException, exc_traceback: types.TracebackType | None = None) -> None:
+    """ Internal function to log exceptions and not crash the server """
     global logger
     if isinstance(exc_type, KeyboardInterrupt):
         logger.info(f"Stopping WakeOnPI (Keyboard Interrupt)")
@@ -39,31 +43,22 @@ def log_exceptions_hook(exc_type: type[BaseException], exc_value: BaseException,
 
 sys.excepthook = log_exceptions_hook
 
-config = configparser.ConfigParser()
-config.read_dict({"SERVER": {"host": "", "port": ""}, "CACHE": {"ip": "", "mac": "", "broadcast_ip": ""}})
-config.read("wakeonpi.config")
+parser = argparse.ArgumentParser(description="WakeOnPI")
+parser.add_argument("host", type=str, default="127.0.0.1", help="The address of the server. Can be an valid IPv4/IPv6 address or a (resolvable) domain")
+parser.add_argument("port", type=int, default=80, help="Port of the server")
+parser.add_argument("-key", type=str, default="", help="Specify a keyfile to use for the https server")
+parser.add_argument("-cert", type=str, default="", help="Specify a certificate to use for the https server")
+parser.add_argument("-key-pwd", type=str, default="", help="If the keyfile is encrypted, specify the password here")
 
-def save_settings() -> None:
-    global config
-    try:
-        with open("wakeonpi.config", "w") as f:
-            config.write(f)
-    except Exception:
-        logger.error(f"Failed to save the config:", exc_info=True)
-
-save_settings()
-
-# Functions
-
-def ping(ip: str, timeout: float = 2.0) -> bool:
+def ping(ip: ipaddress.IPv4Address|ipaddress.IPv6Address, timeout: float = 2.0) -> bool:
     """ Returns if a given host is reachable via ping """
     param = '-n' if platform.system().lower().startswith('win') else '-c'
-    cmd = ['ping', param, '1', '-w', str(timeout), ip] if param == '-n' else ['ping', param, '1', '-W', str(timeout), host]
+    cmd = ['ping', param, '1', '-w', str(timeout), ip] if param == '-n' else ['ping', param, '1', '-W', timeout, host]
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return result.returncode == 0
 
 
-def get_mac(ip: str) -> None|str:
+def get_mac(ip: ipaddress.IPv4Address|ipaddress.IPv6Address) -> str|None:
     """ Tries to query the mac adress from an given IP. Returns None if the host can not be found in the local network """
     ping(ip, timeout=1)
     system = platform.system().lower()
@@ -71,14 +66,15 @@ def get_mac(ip: str) -> None|str:
     try:
         output = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL, encoding="cp437")
     except Exception as ex:
-        logger.error(f"An error happend when trying to retreive the MAC for '{ip}'", exc_info=True)
+        logger.error(f"Failed to query the MAC-address for {ip}: ", exc_info=True)
         return None
     if not (m := re.search(r'([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}', output)):
-        logger.info(f"Failed to query the MAC for '{ip}': The ARP table has no entry for the given host")
+        logger.info(f"Failed to query the MAC for {ip}: The ARP table has no entry for the given host")
         return None 
     return m.group(0).replace("-", ":").upper()
 
-def send_wol_package(ip: str, mac: str, n: int = 3) -> bool:
+def send_wol_package(broadcast_ip: ipaddress.IPv4Address|ipaddress.IPv6Address, mac: str, n: int = 3) -> bool:
+    """ Send a WakeOnLAN package to the given MAC via the given broadcast IP n times """
     mac = mac.upper()
     if not re.match(r"([0-9A-F]{2}[:]){5}([0-9A-F]{2})", mac):
         raise ValueError(f"Invalid MAC '{mac}'")
@@ -88,135 +84,100 @@ def send_wol_package(ip: str, mac: str, n: int = 3) -> bool:
         s.settimeout(1.0)
         try:
             for i in range(n):
-                s.sendto(payload, (ip, 9))
+                s.sendto(payload, (broadcast_ip, 9))
         except Exception as ex:
-            logger.error(f"Failed to send WOL package to {ip} ({mac}): ", exc_info=True)
+            logger.error(f"Failed to send WOL package to {mac} via {broadcast_ip}: ", exc_info=True)
             return False
-    logger.info(f"WOL package sent to {ip} ({mac})")
+    logger.info(f"WOL package sent to {mac} via {broadcast_ip} ")
     return True
 
-host = config.get("SERVER", "host")
-domain = config.get("SERVER", "domain")
+
+config = configparser.ConfigParser()
+config.read("wakeonpi.config")
+
+def save_settings() -> None:
+    """ Save the .config file """
+    global config
+    try:
+        with open("wakeonpi.config", "w") as f:
+            config.write(f)
+    except Exception:
+        logger.error(f"Failed to save the config:", exc_info=True)
+
+host = config.get("SERVER", "host", fallback="")
+broadcast_ip_raw = config.get("SERVER", "broadcast_ip", fallback="")
+port = config.getint("SERVER", "port", fallback=0)
+
 try:
-    port = config.getint("SERVER", "port")
+    broadcast_ip = ipaddress.ip_address(broadcast_ip_raw)
 except ValueError:
-    logger.error(f"Invalid not integer port for server. Terminating")
-    exit()
-if port <= 0 or port > 65535:
-    logger.error(f"Invalid port '{port}' for server. Terminating")
+    logger.error(f"Invalid broadcast address '{broadcast_ip_raw}'. Terminating")
     exit()
 
-mac = None
-ip = None
+Client = NamedTuple("Client", [("name", str), ("ip", ipaddress.IPv4Address|ipaddress.IPv6Address), ("mac", str|None)])
+clients: dict[str, Client] = {}
 
-def reload_cache():
-    global ip, mac, broadcast_ip
-    logger.debug(f"Loading values from the config")
-    ip = config.get("CACHE", "ip")
-    if ip == "":
-        ip = None
-    broadcast_ip = config.get("CACHE", "broadcast_ip")
-    if ip is None:
-        broadcast_ip = None
-    elif broadcast_ip == "":
-        broadcast_ip = '.'.join(ip.split(".")[:-1]) + ".255"
-    mac = config.get("CACHE", "mac")
-    if not re.match(r'([0-9A-F]{2}[:]){5}[0-9A-F]{2}', mac):
-        mac = None
-    logger.debug(f"Loaded IP '{ip}', broadcast IP '{broadcast_ip}' and MAC '{mac}' from cache")
+def reload_devices():
+    global clients
+    for u in [s for s in config.sections() if cast(str, s).startswith("client-")]:
+        try:
+            ip = ipaddress.ip_address(config.get(u, "ip", fallback=""))
+        except ValueError:
+            logger.warning(f"Malformed IP for device {u}")
+            continue
+        mac = config.get(u, "mac", fallback="")
+        if not re.match(r"([0-9A-F]{2}[:\-]){5}[0-9A-Fa-f]{2}", config.get(u, "mac", fallback="").upper().replace("-", ":")):
+            mac = get_mac(ip)
+            if mac is not None:
+                logger.info(f"Found MAC {mac} for {ip}")
+                config.set(u, "mac", mac)
+        clients[u] = Client(config.get(u, "name", fallback=""), ip, mac)
+    logger.debug(f"Loaded {len(clients)} from config: {[', '.join([c.name for c in clients.values()])]}")
 
-reload_cache()
-
-if mac is None and ip is not None:
-    mac = get_mac(ip)
-    if mac is not None:
-        logger.info(f"Found MAC '{mac}' for IP '{ip}'. Updating cache")
-        config.set("CACHE", "mac", mac)
-        save_settings()
-        reload_cache()
+reload_devices()
+save_settings()
 
 
 class WakeOnPIServer(SimpleHTTPRequestHandler):
     def do_GET(self):
-        global ip, broadcast_ip, mac, domain
+        global host, clients, broadcast_ip
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         path = parsed.path
 
-        if not (d := self.headers.get("Host", "")).endswith(domain):
+        if not (d := self.headers.get("Host", "")) == host:
             logger.warning(f"Refused connection to host '{d}'")
             self.send_response(403)
             self.end_headers()
             self.wfile.write(f"403: Forbidden".encode("utf-8"))
             return
-
-        if path == "/api/ping":
-            ping_result = False
-            if ip is not None:
-                ping_result = ping(ip)
-                if not mac:
-                    mac = get_mac(ip)
-            logger.info(f"Pinged {ip}: {ping_result}")
-            self._send_json({"ip": ip, "mac": mac, "ping": ping_result})
-            return
-        elif path == "/api/set_ip": 
-            if not "ip" in params:
-                self._send_json({"status": False, "status_info": "Missing paramter 'ip'"})
-                return
-            elif len(params["ip"]) != 1:
-                self._send_json({"status": False, "status_info": f"Malformed value for parameter 'ip': '{params['ip']}'"})
-                return
-            ip = params["ip"][0]
-            config.set("CACHE", "ip", ip)
-            logger.info(f"Updating IP to '{ip}'")
-            save_settings()
-            reload_cache()
-            self._send_json({"status": True, "status_info": f"Updated ip to '{ip}'"})
-            return
-        elif path == "/api/set_broadcast_ip": 
-            if not "ip" in params:
-                self._send_json({"status": False, "status_info": "Missing paramter 'ip'"})
-                return
-            elif len(params["ip"]) != 1:
-                self._send_json({"status": False, "status_info": f"Malformed value for parameter 'ip': '{params['ip']}'"})
-                return
-            broadcast_ip = params["ip"][0]
-            config.set("CACHE", "broadcast_ip", broadcast_ip)
-            logger.info(f"Updating Broadcast IP to '{broadcast_ip}'")
-            save_settings()
-            reload_cache()
-            self._send_json({"status": True, "status_info": f"Updated broadcast IP to '{broadcast_ip}'"})
-            return
-        elif path == "/api/set_mac": 
-            if not "mac" in params:
-                self._send_json({"status": False, "status_info": "Missing paramter 'mac'"})
-                return
-            elif len(params["mac"]) != 1:
-                self._send_json({"status": False, "status_info": f"Malformed value for parameter 'mac': '{params['mac']}'"})
-                return
-            mac = params["mac"][0]
-            config.set("CACHE", "mac", mac)
-            logger.info(f"Updating MAC to '{mac}'")
-            save_settings()
-            reload_cache()
-            self._send_json({"status": True, "status_info": f"Updated MAC to '{mac}'"})
-            return
-        elif path == "/api/wol":
-            if broadcast_ip is None:
-                self._send_json({"wol": False, "wol_info": "No Broadcast IP endpoint has been set yet"})
-                return
-            if mac is None:
-                mac = get_mac(host)
-            if mac is None:
-                self._send_json({"wol": False, "wol_info": "Could not resolve the local MAC address"})
-                return
-            if not send_wol_package(broadcast_ip, mac):
-                self._send_json({"wol": False, "wol_info": "Failed to send WOL package"})
-            else:
-                self._send_json({"wol": True, "wol_info": ""})
-            return
-        else:
-            super().do_GET()
+        
+        c: Client|None = None
+        if "uuid" in params and len(params["uuid"]) >= 1 and params["uuid"][0] in clients:
+            c = clients[params["uuid"][0]]
+        
+        match path:
+            case "/api/get_clients":
+                self._send_json({c for c in clients}) 
+            case "/api/ping":
+                if c is None:
+                    self._send_json({"status": False, "status_info": "Missing or malformed paramter 'uuid'"})
+                    return
+                r = ping(c.ip)
+                logger.info(f"Pinged {c.ip}: {r}")
+                self._send_json({"name": c.name, "ip": c.ip, "mac": c.mac, "ping": r})
+            case "/api/wol":
+                if c is None:
+                    self._send_json({"status": False, "status_info": "Missing or malformed paramter 'uuid'"})
+                    return
+                if c.mac is None:
+                    self._send_json({"status": False, "status_info": "Device is missing valid MAC-address"})
+                    return
+                r = send_wol_package(broadcast_ip, c.mac)
+                logger.info(f"Pinged {c.ip}: {r}")
+                self._send_json({"name": c.name, "ip": c.ip, "mac": c.mac, "ping": r})
+            case _:
+                super().do_GET()
 
     def guess_type(self, path):
         base_type = super().guess_type(path)
@@ -232,8 +193,6 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
         self.wfile.write(body)
         self.wfile.flush()
 
-
-
 if __name__ == "__main__":
     os.chdir((d := Path("web").resolve()))
     SimpleHTTPRequestHandler.extensions_map = {k: v + ';charset=UTF-8' for k, v in SimpleHTTPRequestHandler.extensions_map.items()}
@@ -246,11 +205,8 @@ if __name__ == "__main__":
         httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
         logger.info(f"Loaded ssl certificate from disk")
         ssl_enabled = True
-    else:
-        logger.debug(Path("../WakeOnPI.cer").exists())
-        logger.debug(Path("../WakeOnPI_encrypted.key").exists())
 
-    logger.info(f"Started server on http{'s' if ssl_enabled else ''}://{domain}:{port} (IP {host}) in directory '{d}'")
+    logger.info(f"Started server on http{'s' if ssl_enabled else ''}://{host}:{port}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
