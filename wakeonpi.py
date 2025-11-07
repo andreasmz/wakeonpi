@@ -24,8 +24,6 @@ from typing import cast
 from urllib.parse import urlparse, parse_qs, unquote
 from uuid import uuid4
 
-os.chdir((d := Path("web").resolve()))
-
 logger = logging.getLogger("WakeOnPI")
 logger.setLevel(logging.DEBUG)
 _fmt = logging.Formatter('[%(asctime)s %(levelname)s]: %(message)s')
@@ -47,11 +45,12 @@ def log_exceptions_hook(exc_type: type[BaseException], exc_value: BaseException,
 sys.excepthook = log_exceptions_hook
 
 parser = argparse.ArgumentParser(description="WakeOnPI")
-parser.add_argument("-host", type=str, default="127.0.0.1", help="The address of the server. Can be an valid IPv4/IPv6 address or a (resolvable) domain")
+parser.add_argument("-host", type=str, default="", help="The address of the server. Can be an valid IPv4/IPv6 address or a (resolvable) domain")
 parser.add_argument("-port", type=int, default=-1, help="Port of the server")
 parser.add_argument("-key", type=str, default="", help="Specify a keyfile to use for the https server")
 parser.add_argument("-cert", type=str, default="", help="Specify a certificate to use for the https server")
 parser.add_argument("-key-pwd", type=str, default="", help="If the keyfile is encrypted, specify the password here")
+parser.add_argument("-d", type=str, default="", help="If not empty, only accept queries from this domain")
 
 args = parser.parse_args()
 
@@ -99,7 +98,7 @@ def send_wol_package(broadcast_ip: ipaddress.IPv4Address|ipaddress.IPv6Address, 
 
 config = configparser.ConfigParser()
 config.read_dict({"SERVER": {"broadcast_ip": ""}})
-config.read("../wakeonpi.config")
+config.read("wakeonpi.config")
 
 def save_config() -> None:
     """ Save the .config file """
@@ -121,7 +120,7 @@ def save_config() -> None:
             config.remove_section(us)
         
     try:
-        with open("../wakeonpi.config", "w") as f:
+        with open("wakeonpi.config", "w") as f:
             config.write(f)
     except Exception:
         logger.error(f"Failed to save the config:", exc_info=True)
@@ -168,13 +167,17 @@ reload_config()
 save_config()
 
 class WakeOnPIServer(SimpleHTTPRequestHandler):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=Path("web").resolve(), **kwargs)
+
     def do_GET(self):
         global host, clients, broadcast_ip
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         path = parsed.path
 
-        if not (d := self.headers.get("Host", "")) == host:
+        if args.d and not (d := self.headers.get("Host", "")) == args.d:
             logger.warning(f"Refused connection to host '{d}'")
             self.send_response(403)
             self.end_headers()
@@ -199,7 +202,13 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
                     return
                 r = ping(c.ip)
                 logger.info(f"Pinged {c.ip}: {r}")
-                self._send_json({"status": True, "name": c.name, "ip": str(c.ip), "mac": c.mac, "last_online": c.last_online, "last_wol": c.last_wol, "ping": r})
+                self._send_json({"status": True, 
+                                 "name": c.name, 
+                                 "ip": str(c.ip), 
+                                 "mac": c.mac if c.mac is not None else "", 
+                                 "last_online": c.last_online, 
+                                 "last_wol": c.last_wol, 
+                                 "ping": r})
             case "/api/add":
                 clients[(uuid := str(uuid4()))] = Client("", ipaddress.ip_address("127.0.0.1"), "", "", "")
                 if "name" in params:
@@ -212,7 +221,12 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
                 reload_config()
                 c = clients[uuid]
                 logger.info(f"Added device {uuid} ('{c.name}')")
-                self._send_json({"status": True, "device": {uuid : {"name": c.name, "ip": str(c.ip), "mac": c.mac, "last_online": c.last_online, "last_wol": c.last_wol}}})
+                self._send_json({"status": True, "device": {
+                    uuid : {"name": c.name, 
+                            "ip": str(c.ip), 
+                            "mac": c.mac if c.mac is not None else "", 
+                            "last_online": c.last_online, 
+                            "last_wol": c.last_wol}}})
             case "/api/remove":
                 if c is None:
                     self._send_json({"status": False, "status_info": "Missing or malformed paramter 'uuid'"})
@@ -233,6 +247,13 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
                     name = unquote(params["name"][0])
                     logger.info(f"Updated client {uuid} name from '{c.name}' to '{name}'")
                     c.name = name
+                if "mac" in params:
+                    if len(params["mac"]) != 1:
+                        self._send_json({"status": False, "status_info": "Missing or malformed paramter 'mac'"})
+                        return
+                    mac = params['mac'][0]
+                    logger.info(f"Updated client {uuid} MAC from '{c.mac}' to '{mac}'")
+                    c.mac = mac
                 if "ip" in params:
                     if len(params["ip"]) != 1:
                         self._send_json({"status": False, "status_info": "Missing or malformed paramter 'ip'"})
@@ -244,13 +265,6 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
                         return
                     logger.info(f"Updated client {uuid} IP from {c.ip} to {params['ip'][0]}")
                     c.ip = ip
-                if "mac" in params:
-                    if len(params["mac"]) != 1:
-                        self._send_json({"status": False, "status_info": "Missing or malformed paramter 'mac'"})
-                        return
-                    mac = params['mac'][0]
-                    logger.info(f"Updated client {uuid} MAC from '{c.mac}' to '{mac}'")
-                    c.mac = mac
                 save_config()
                 reload_config()
                 self._send_json({"status": True})
@@ -266,7 +280,7 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
                     return
                 r = send_wol_package(broadcast_ip, c.mac)
                 logger.info(f"Pinged {c.ip}: {r}")
-                self._send_json({"status": True, "name": c.name, "ip": str(c.ip), "mac": c.mac,  "last_online": c.last_online, "last_wol": c.last_wol, "ping": r})
+                self._send_json({"status": True, "name": c.name, "ip": str(c.ip), "mac": c.mac if c.mac is not None else "",  "last_online": c.last_online, "last_wol": c.last_wol, "ping": r})
             case _:
                 super().do_GET()
 
@@ -296,7 +310,7 @@ if __name__ == "__main__":
         elif not cert_path.exists():
             logger.warning(f"Cert file '{cert_path}' does not exist")
         else:
-            pwd = args.keypwd if args.keypwd != "" else None
+            pwd = args.key_pwd if args.key_pwd != "" else None
             try:
                 context.load_cert_chain(certfile=cert_path, keyfile=key_path, password=pwd)
                 context.load_verify_locations(cert_path)
@@ -314,7 +328,7 @@ if __name__ == "__main__":
     if ssl_enabled:
         httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
 
-    logger.info(f"Started server on http{'s' if ssl_enabled else ''}://{host}:{port} in directory '{d}'")
+    logger.info(f"Started server on http{'s' if ssl_enabled else ''}://{host}:{port}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

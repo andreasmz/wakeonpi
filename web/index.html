@@ -216,9 +216,8 @@
                 if (uuid == "") {
                     return;
                 }
-                ip = prompt("IP", ip);
+                ip = prompt("Please enter the new IP for device '" + name + "'", ip);
                 if (!!ip && ip != "null") {
-                    console.log(ip);
                    await fetchJSON("/api/update?uuid=" + uuid + "&ip=" + encodeURI(ip)); 
                 }
                 
@@ -229,9 +228,8 @@
                 if (uuid == "") {
                     return;
                 }
-                mac = prompt("mac", mac);
+                mac = prompt("Please enter the new MAC address of '" + name + "'. You can submit an invalid MAC (e.g. just 'auto') to let WakeOnPI guess the MACa", mac);
                 if (!!mac && mac != "null") {
-                    console.log(mac);
                    await fetchJSON("/api/update?uuid=" + uuid + "&mac=" + encodeURI(mac)); 
                 }
                 
@@ -239,9 +237,8 @@
             }
 
             async function add_device() {
-                name = prompt("name");
+                name = prompt("What name you the new device have?");
                 if (!!name && name != "null") {
-                    console.log(name);
                    await fetchJSON("/api/add?name=" + encodeURI(name)); 
                 }
                 
@@ -252,7 +249,7 @@
                 if (uuid == "") {
                     return;
                 }
-                name = prompt("Do you really want to remove the device? If yes, type 'yes'");
+                name = prompt("Do you really want to remove device '" + name + "'? If yes, type 'yes'");
                 if (name === "yes") {
                    await fetchJSON("/api/remove?uuid=" + uuid); 
                 }
