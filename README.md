@@ -97,5 +97,7 @@ python --version
 
 ```bash
 cd /opt/wakeonpi
-git pull origin master
+sudo git pull origin main
+
+sudo systemctl restart wakeonpi.service
 ```
