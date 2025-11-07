@@ -100,7 +100,8 @@ def send_wol_package(broadcast_ip: ipaddress.IPv4Address|ipaddress.IPv6Address, 
 
 
 config = configparser.ConfigParser()
-config.read("wakeonpi.config")
+config_path = (Path(__file__).parent / "wakeonpi.config").resolve()
+config.read(config_path)
 
 def save_config() -> None:
     """ Save the .config file """
@@ -120,7 +121,7 @@ def save_config() -> None:
             config.remove_section(us)
         
     try:
-        with open("wakeonpi.config", "w") as f:
+        with open(config_path, "w") as f:
             config.write(f)
     except Exception:
         logger.error(f"Failed to save the config:", exc_info=True)
