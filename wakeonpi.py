@@ -171,7 +171,7 @@ save_config()
 class WakeOnPIServer(SimpleHTTPRequestHandler):
 
     def __init__(self, *args, **kwargs):
-        d = (Path(__file__) / "web").resolve()
+        d = (Path(__file__).parent / "web").resolve()
         logger.info(f"Servig web server for directory '{d}'")
         super().__init__(*args, directory=d, **kwargs)
 
