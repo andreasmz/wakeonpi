@@ -109,7 +109,7 @@ def save_config() -> None:
             config.add_section(f"device-{u}")
         config.set(f"device-{u}", "name", c.name)
         config.set(f"device-{u}", "ip", str(c.ip))
-        config.set(f"device-{u}", "mac", c.mac if c.mac is not None else "")
+        config.set(f"device-{u}", "mac", c.mac.upper() if c.mac is not None else "")
         config.set(f"device-{u}", "last_wol", c.last_wol)
         config.set(f"device-{u}", "last_online", c.last_online)
 
@@ -202,10 +202,16 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
                 self._send_json({"status": True, "name": c.name, "ip": str(c.ip), "mac": c.mac, "last_online": c.last_online, "last_wol": c.last_wol, "ping": r})
             case "/api/add":
                 clients[(uuid := str(uuid4()))] = Client("", ipaddress.ip_address("127.0.0.1"), "", "", "")
+                if "name" in params:
+                    if len(params["name"]) != 1:
+                        self._send_json({"status": False, "status_info": "Missing or malformed paramter 'name'"})
+                        return
+                    name = unquote(params["name"][0])
+                    clients[uuid] .name = name
                 save_config()
                 reload_config()
-                logger.info(f"Added device {uuid}")
                 c = clients[uuid]
+                logger.info(f"Added device {uuid} ('{c.name}')")
                 self._send_json({"status": True, "device": {uuid : {"name": c.name, "ip": str(c.ip), "mac": c.mac, "last_online": c.last_online, "last_wol": c.last_wol}}})
             case "/api/remove":
                 if c is None:

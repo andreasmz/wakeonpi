@@ -138,7 +138,7 @@
         <div id="container_main">
 
             <div class="flex_element flex_row_element">
-                <i class="fa-brands fa-raspberry-pi"></i>
+                <i id="piinfo" class="fa-brands fa-raspberry-pi"></i>
 
                 <span id="loaddot1" class="loaddot fa-solid">•</span>
                 <span id="loaddot2" class="loaddot fa-solid">•</span>
@@ -146,7 +146,13 @@
                 
                 <div class="flex_column_element">
                     <i id="pcinfo_icon" class="fa-solid fa-desktop"></i>
-                    <span id="pcinfo_span" style="margin-top: 5px; text-align: center;"> </span>
+                    <span id="pcinfo_span1" style="margin-top: 5px; text-align: center; white-space: nowrap;"> </span>
+                    <span id="pcinfo_span2" style="margin-top: 5px; text-align: center; white-space: nowrap;"> </span>
+                    <div style="white-space: nowarp;">
+                        <select name="device_select" id="device_select" onchange="uuid = this.value; query();"></select>
+                        <i class="fa-solid fa-plus" style="font-size:0.7em;" onclick="add_device();"></i>
+                        <i class="fa-solid fa-minus" style="font-size:0.7em;" onclick="remove_device();"></i>
+                    </div>
                 </div>
                 
             </div>
@@ -168,10 +174,16 @@
             var pulse_counter = 0;
             var query_counter = 0;
             var status = Status.Offline;
+            var pi_status = true;
 
+            var devices = {};
+
+            var uuid = "";
+            var name = "";
             var ip = "";
             var mac = "";
-            var last_start = "";
+            var last_wol = "";
+            var last_online = "";
 
             async function fetchJSON(url) {
                 try {
@@ -182,13 +194,13 @@
                     try {
                         data = JSON.parse(text); 
                     } catch {
+                        console.error('Failed to fetch ' + url + ":", err.message);
                         throw new Error('Invalid response: Response is no JSON');
                     }
 
                     return data;
 
                 } catch (err) {
-                    console.error('Failed to fetch ' + url + ":", err.message);
                     return null;
                 }
             }
@@ -200,14 +212,102 @@
                 pulse_counter++;
             }
 
+            async function update_ip() {
+                if (uuid == "") {
+                    return;
+                }
+                ip = prompt("IP", ip);
+                if (!!ip && ip != "null") {
+                    console.log(ip);
+                   await fetchJSON("/api/update?uuid=" + uuid + "&ip=" + encodeURI(ip)); 
+                }
+                
+                query();
+            }
+
+            async function update_mac() {
+                if (uuid == "") {
+                    return;
+                }
+                mac = prompt("mac", mac);
+                if (!!mac && mac != "null") {
+                    console.log(mac);
+                   await fetchJSON("/api/update?uuid=" + uuid + "&mac=" + encodeURI(mac)); 
+                }
+                
+                query();
+            }
+
+            async function add_device() {
+                name = prompt("name");
+                if (!!name && name != "null") {
+                    console.log(name);
+                   await fetchJSON("/api/add?name=" + encodeURI(name)); 
+                }
+                
+                query();
+            }
+
+            async function remove_device() {
+                if (uuid == "") {
+                    return;
+                }
+                name = prompt("Do you really want to remove the device? If yes, type 'yes'");
+                if (name === "yes") {
+                   await fetchJSON("/api/remove?uuid=" + uuid); 
+                }
+
+                uuid = "";
+                
+                query();
+            }
+
             function update() {
-                document.getElementById("pcinfo_span").innerHTML = ip + "<br>" + mac;
+                select = document.getElementById("device_select");
+                uuid = select.value;
+                const existingValues = new Set([...select.options].map(opt => opt.value));
+                for (const [name, uuid] of Object.entries(devices)) {
+                    if (!existingValues.has(uuid)) {
+                        const option = document.createElement("option");
+                        option.value = uuid;
+                        option.text = name;
+                        select.appendChild(option);
+                    } else {
+                        const opt = [...select.options].find(o => o.value === uuid);
+                        if (opt.text !== name) opt.text = name;
+                    }
+                }
+
+                for (const opt of [...select.options]) {
+                    if (!devices.hasOwnProperty(opt.text)) {
+                        select.removeChild(opt);
+                    }
+                }
+
+                if (uuid == "" && select.value != "") {
+                    uuid = select.value;
+                }
+
+                if (uuid != "") {
+                    document.getElementById("pcinfo_span1").innerHTML = ip + " <i class='fa-solid fa-pen' style='font-size: 0.7em;' onclick='update_ip();'></i>" 
+                    document.getElementById("pcinfo_span2").innerHTML = mac + " <i class='fa-solid fa-pen' style='font-size: 0.7em;' onclick='update_mac();'></i>";
+                } else {
+                    document.getElementById("pcinfo_span1").innerHTML = "";
+                    document.getElementById("pcinfo_span2").innerHTML = "";
+                }
+                
                 if (status == Status.Offline) {
                     document.getElementById("pcinfo_icon").style.color = "red";
                 } else if (status == Status.Online) {
                     document.getElementById("pcinfo_icon").style.color = "green";
                 } else {
                     document.getElementById("pcinfo_icon").style.color = "white";
+                }
+
+                if (pi_status) {
+                    document.getElementById("piinfo").style.color = "white";
+                } else {
+                    document.getElementById("piinfo").style.color = "red";
                 }
             }
 
@@ -217,19 +317,58 @@
                 } else if (query_counter == 20 ) {
                     console.log("Last query before stopping the ping commands");
                 }
-                response = await fetchJSON("/api/ping");
-                if (!response) {
-                    console.log("Failed to query /api/ping");
+                response = await fetchJSON("/api/list");
+                devices = {};
+                if (!response||!("status" in response)||!response["status"]) {
+                    console.log("Failed to list devices");
+                    uuid = "";
+                    name = "";
                     ip = "";
                     mac = "";
+                    last_online = "";
+                    last_wol = "";
+                    status = Status.Offline;
+                    pi_status = false;
+                    update();
+                    return
+                }
+                pi_status = true;
+
+                for (const [uuid, d] of Object.entries(response["devices"])) {
+                    devices[d["name"]] = uuid;
+                }
+
+                if (uuid == "") {
+                    name = "";
+                    ip = "";
+                    mac = "";
+                    last_online = "";
+                    last_wol = "";
+                    update();
+                    if (uuid == "") {
+                        return
+                    }
+                }
+
+                response = await fetchJSON("/api/ping?uuid="+uuid);
+                if (!response||!("status" in response)||!response["status"]) {
+                    console.log("Failed to ping device");
+                    name = "";
+                    ip = "";
+                    mac = "";
+                    last_online = "";
+                    last_wol = "";
+                    pi_status = false;
                     update();
                     return
                 }
 
-                console.log(response);
-
+                name = response["name"];
                 ip = response["ip"];
                 mac = response["mac"];
+                last_online = response["last_online"];
+                last_wol = response["last_wol"];
+
                 if (response["ping"] == true) {
                     status = Status.Online;
                 } else if (status == Status.Online) {
@@ -241,15 +380,13 @@
 
 
             async function start_pc() {
-                response = await fetchJSON("/api/wol");
-                if (!response) {
+                response = await fetchJSON("/api/wol?uuid="+uuid);
+                if (!response||!("status" in response)||!response["status"]) {
                     console.log("Failed to query /api/wol");
                     status = Status.Offline;
                     update();
                     return
                 }
-
-                console.log(response);
                 status = Status.Starting;
                 update();
             }

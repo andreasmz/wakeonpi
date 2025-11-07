@@ -24,13 +24,14 @@ nano /opt/wakeonpi/wakeonpi.config
 
 You can now start the webserver manually with
 ```bash
-python /opt/wakeonpi/wakeonpi.py
+python /opt/wakeonpi/wakeonpi.py host [-port port]
 ```
 
-or make it a systemd service to autostart it by creating a `.service` file 
+or make it a systemd service to autostart it by creating a `.service` file (Don't forget to replace host and port with appropriate values)
 ```bash
 sudo nano /etc/system/system/wakeonpi.service
 ```
+
 ```ini
 [Unit]
 Description=WakeOnPI
@@ -38,7 +39,7 @@ After=network.target
 
 [Service]
 type=simple
-ExecStart=python /opt/wakeonpi/wakeonpi.config
+ExecStart=python /opt/wakeonpi/wakeonpi.py host [-port port]
 Restart=on-failure
 RestartSec=60
 StandardOutput=append:/var/log/wakeonpi.log
@@ -51,7 +52,13 @@ PIDFile=/run/wakeonpi.pid
 WantedBy=multi-user.target
 ```
 
-Now startt the service
+If you want, you can also run the server with SSL/TLS by providing a certification chain
+
+```bash
+python /opt/wakeonpi/wakeonpi.py host port [-key keyfile] [-cert certfile] [-certpwd certfile_password]
+```
+
+Finally, start the service
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable wakeonpi.service
