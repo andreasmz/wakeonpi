@@ -28,7 +28,7 @@ options:
   -key KEY          Specify a keyfile to use for the https server
   -cert CERT        Specify a certificate to use for the https server
   -key-pwd KEY_PWD  If the keyfile is encrypted, specify the password here
-  -d domain              If not empty, only accept queries from this domain
+  -d domain         If not empty, only accept queries from this domain
   -upgrade          If given (and port NOT specified), upgrade http to https
 ```
 
