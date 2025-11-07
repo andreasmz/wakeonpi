@@ -180,6 +180,8 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
         params = parse_qs(parsed.query)
         path = parsed.path
 
+        logger.debug(self.directory)
+
         if args.d and not (d := self.headers.get("Host", "").lower()) == args.d.lower():
             logger.warning(f"Refused connection to host '{d}'")
             self.send_response(403)
