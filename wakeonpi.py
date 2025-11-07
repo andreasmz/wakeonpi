@@ -46,6 +46,7 @@ def log_exceptions_hook(exc_type: type[BaseException], exc_value: BaseException,
 sys.excepthook = log_exceptions_hook
 
 parser = argparse.ArgumentParser(description="WakeOnPI")
+parser.add_argument("b", type=str, default="", help="Broadcast address of your local network")
 parser.add_argument("-host", type=str, default="", help="The address of the server. Can be an valid IPv4/IPv6 address or a (resolvable) domain")
 parser.add_argument("-port", type=int, default=-1, help="Port of the server")
 parser.add_argument("-key", type=str, default="", help="Specify a keyfile to use for the https server")
@@ -59,7 +60,7 @@ args = parser.parse_args()
 def ping(ip: ipaddress.IPv4Address|ipaddress.IPv6Address, timeout: float = 2.0) -> bool:
     """ Returns if a given host is reachable via ping """
     param = '-n' if platform.system().lower().startswith('win') else '-c'
-    cmd = ['ping', param, '1', '-w', str(timeout), str(ip)] if param == '-n' else ['ping', param, '1', '-W', timeout, host]
+    cmd = ['ping', param, '1', '-w', str(timeout), str(ip)] if param == '-n' else ['ping', param, '1', '-W', str(timeout), str(ip)]
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return result.returncode == 0
 
@@ -68,7 +69,7 @@ def get_mac(ip: ipaddress.IPv4Address|ipaddress.IPv6Address) -> str|None:
     """ Tries to query the mac adress from an given IP. Returns None if the host can not be found in the local network """
     ping(ip, timeout=1)
     system = platform.system().lower()
-    cmd = ['arp', '-a', str(ip)] if system.startswith('win') else ['arp', '-n', str(ip)]
+    cmd = ['arp', '-a', str(ip)] if system.lower().startswith('win') else ['arp', '-n', str(ip)]
     try:
         output = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL, encoding="cp437")
     except Exception as ex:
@@ -99,7 +100,6 @@ def send_wol_package(broadcast_ip: ipaddress.IPv4Address|ipaddress.IPv6Address, 
 
 
 config = configparser.ConfigParser()
-config.read_dict({"SERVER": {"broadcast_ip": ""}})
 config.read("wakeonpi.config")
 
 def save_config() -> None:
@@ -114,8 +114,6 @@ def save_config() -> None:
         config.set(f"device-{u}", "last_wol", c.last_wol)
         config.set(f"device-{u}", "last_online", c.last_online)
 
-    config.set("SERVER", "broadcast_ip", str(broadcast_ip) if broadcast_ip is not None else "")
-
     for us in [s for s in config.sections() if cast(str, s).startswith("device-")]:
         u = cast(str, us).replace("device-", "")
         if u not in clients:
@@ -129,6 +127,13 @@ def save_config() -> None:
 
 host: str = args.host
 port: int = args.port
+broadcast_ip_raw = args.b
+
+try:
+    broadcast_ip = ipaddress.ip_address(broadcast_ip_raw)
+except ValueError:
+    logger.error(f"Invalid broadcast address '{broadcast_ip_raw}'")
+    broadcast_ip = None
 
 @dataclass
 class Client:
@@ -140,14 +145,7 @@ class Client:
 clients: dict[str, Client] = {}
 
 def reload_config():
-    global clients, broadcast_ip
-    broadcast_ip_raw = config.get("SERVER", "broadcast_ip", fallback="")
-
-    try:
-        broadcast_ip = ipaddress.ip_address(broadcast_ip_raw)
-    except ValueError:
-        logger.error(f"Invalid broadcast address '{broadcast_ip_raw}'")
-        broadcast_ip = None
+    global clients
 
     for us in [s for s in config.sections() if cast(str, s).startswith("device-")]:
         us: str

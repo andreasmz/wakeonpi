@@ -22,15 +22,18 @@ python /opt/wakeonpi/wakeonpi.py
 ```bash
 WakeOnPI
 
+positional arguments:
+  b                 Broadcast address of your local network
+
 options:
   -h, --help        show this help message and exit
   -host HOST        The address of the server. Can be an valid IPv4/IPv6 address or a (resolvable) domain
-  -port PORT        Port of the server. Defaults to 80/443
+  -port PORT        Port of the server
   -key KEY          Specify a keyfile to use for the https server
   -cert CERT        Specify a certificate to use for the https server
   -key-pwd KEY_PWD  If the keyfile is encrypted, specify the password here
-  -d domain         If not empty, only accept queries from this domain
-  -upgrade          If given (and port NOT specified), upgrade http to https
+  -d D              If not empty, only accept queries from this domain
+  -upgrade          If given (and port NOT given), upgrade http to https
 ```
 
 Note: To run a https server, you need both a certificate and a private key.
@@ -49,7 +52,7 @@ After=network.target
 
 [Service]
 type=simple
-ExecStart=python /opt/wakeonpi/wakeonpi.py [-host host] [-port port] -upgrade
+ExecStart=python /opt/wakeonpi/wakeonpi.py 192.168.1.255 [-host host] [-port port] -upgrade
 Restart=on-failure
 RestartSec=60
 StandardOutput=append:/var/log/wakeonpi.log
@@ -62,6 +65,7 @@ PIDFile=/run/wakeonpi.pid
 WantedBy=multi-user.target
 ```
 
+Don't forget to update the broadcast IP (192.168.1.255 is this example) as well as the other parameters (e.g. host, port).
 Finally, start the service
 ```bash
 sudo systemctl daemon-reload
