@@ -171,8 +171,8 @@ save_config()
 class WakeOnPIServer(SimpleHTTPRequestHandler):
 
     def __init__(self, *args, **kwargs):
-        d = Path('web').resolve()
-        logger.debug(f"Webserver is serving files in {d}")
+        d = Path('./web').resolve()
+        logger.info(f"Webserver is serving files in {d}")
         super().__init__(*args, directory=d, **kwargs)
 
     def do_GET(self):
