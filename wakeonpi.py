@@ -171,8 +171,7 @@ save_config()
 class WakeOnPIServer(SimpleHTTPRequestHandler):
 
     def __init__(self, *args, **kwargs):
-        d = Path('./web').resolve()
-        logger.info(f"Webserver is serving files in {d}")
+        d = (Path(__file__) / "web").resolve()
         super().__init__(*args, directory=d, **kwargs)
 
     def do_GET(self):
@@ -180,8 +179,6 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         path = parsed.path
-
-        logger.debug(self.directory)
 
         if args.d and not (d := self.headers.get("Host", "").lower()) == args.d.lower():
             logger.warning(f"Refused connection to host '{d}'")
