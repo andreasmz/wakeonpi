@@ -13,21 +13,29 @@ cd /opt/wakeonpi
 git clone "https://github.com/andreasmz/wakeonpi"
 ```
 
-You should now edit the wakeonpi.config file and specify at least the server host and port.
-If you specify a domain, the webinterface will only response to requests on this domain and
-answer all other querys with 403 Forbidden (Note: This will block querys using IP adresses
-as well).
-
-```bash
-nano /opt/wakeonpi/wakeonpi.config
-```
-
 You can now start the webserver manually with
 ```bash
-python /opt/wakeonpi/wakeonpi.py host [-port port]
+python /opt/wakeonpi/wakeonpi.py
 ```
 
-or make it a systemd service to autostart it by creating a `.service` file (Don't forget to replace host and port with appropriate values)
+```bash
+WakeOnPI
+
+options:
+  -h, --help        show this help message and exit
+  -host HOST        The address of the server. Can be an valid IPv4/IPv6 address or a (resolvable) domain
+  -port PORT        Port of the server. Defaults to 80/443
+  -key KEY          Specify a keyfile to use for the https server
+  -cert CERT        Specify a certificate to use for the https server
+  -key-pwd KEY_PWD  If the keyfile is encrypted, specify the password here
+  -d domain              If not empty, only accept queries from this domain
+  -upgrade          If given (and port NOT specified), upgrade http to https
+```
+
+Note: To run a https server, you need both a certificate and a private key.
+
+It is recommened to run the server as a systemd service in the background. Thatway Linux will autostart the script, manage the log files and make sure only one instance runs at a time. Start with creating a `.service` file:
+
 ```bash
 sudo nano /etc/system/system/wakeonpi.service
 ```
@@ -39,7 +47,7 @@ After=network.target
 
 [Service]
 type=simple
-ExecStart=python /opt/wakeonpi/wakeonpi.py host [-port port]
+ExecStart=python /opt/wakeonpi/wakeonpi.py [-host host] [-port port] -upgrade
 Restart=on-failure
 RestartSec=60
 StandardOutput=append:/var/log/wakeonpi.log
@@ -50,12 +58,6 @@ PIDFile=/run/wakeonpi.pid
 
 [Install]
 WantedBy=multi-user.target
-```
-
-If you want, you can also run the server with SSL/TLS by providing a certification chain
-
-```bash
-python /opt/wakeonpi/wakeonpi.py host port [-key keyfile] [-cert certfile] [-certpwd certfile_password]
 ```
 
 Finally, start the service

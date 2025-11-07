@@ -20,6 +20,7 @@ import types
 from dataclasses import dataclass
 from http.server import  HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+from threading import Thread
 from typing import cast
 from urllib.parse import urlparse, parse_qs, unquote
 from uuid import uuid4
@@ -51,6 +52,7 @@ parser.add_argument("-key", type=str, default="", help="Specify a keyfile to use
 parser.add_argument("-cert", type=str, default="", help="Specify a certificate to use for the https server")
 parser.add_argument("-key-pwd", type=str, default="", help="If the keyfile is encrypted, specify the password here")
 parser.add_argument("-d", type=str, default="", help="If not empty, only accept queries from this domain")
+parser.add_argument("-upgrade", action="store_true",  help="If given (and port NOT given), upgrade http to https")
 
 args = parser.parse_args()
 
@@ -177,7 +179,7 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
         params = parse_qs(parsed.query)
         path = parsed.path
 
-        if args.d and not (d := self.headers.get("Host", "")) == args.d:
+        if args.d and not (d := self.headers.get("Host", "").lower()) == args.d.lower():
             logger.warning(f"Refused connection to host '{d}'")
             self.send_response(403)
             self.end_headers()
@@ -298,6 +300,16 @@ class WakeOnPIServer(SimpleHTTPRequestHandler):
         self.wfile.write(body)
         self.wfile.flush()
 
+class RedirectHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        host = self.headers.get('Host')
+        if host:
+            host = host.split(':')[0]
+        new_url = f"https://{host}{self.path}"
+        self.send_response(301)
+        self.send_header('Location', new_url)
+        self.end_headers()
+
 if __name__ == "__main__":
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ssl_enabled = False
@@ -321,7 +333,14 @@ if __name__ == "__main__":
             ssl_enabled = True
 
     if port == -1:
-        port = 443 if ssl_enabled else 80    
+        port = 443 if ssl_enabled else 80   
+        if ssl_enabled and args.upgrade: 
+            def _redirect_server():
+                httpd = HTTPServer((host, 80), RedirectHandler)
+                logger.info(f"Started redirecting server on http://{host}:{80}")
+                httpd.serve_forever()
+            Thread(target=_redirect_server, daemon=True).start()
+
 
     SimpleHTTPRequestHandler.extensions_map = {k: v + ';charset=UTF-8' for k, v in SimpleHTTPRequestHandler.extensions_map.items()}
     httpd = HTTPServer((host, port), WakeOnPIServer)
