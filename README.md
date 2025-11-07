@@ -6,11 +6,12 @@ To get started simply type
 
 ```bash
 # Create a local directory for the script and config
-mkdir /opt/wakeonpi 
-cd /opt/wakeonpi
+cd /opt
 
 # Clone the repository
-git clone "https://github.com/andreasmz/wakeonpi"
+sudo git clone "https://github.com/andreasmz/wakeonpi"
+
+cd /opt/wakeonpi
 ```
 
 You can now start the webserver manually with
@@ -37,7 +38,8 @@ Note: To run a https server, you need both a certificate and a private key.
 It is recommened to run the server as a systemd service in the background. Thatway Linux will autostart the script, manage the log files and make sure only one instance runs at a time. Start with creating a `.service` file:
 
 ```bash
-sudo nano /etc/system/system/wakeonpi.service
+sudo touch /etc/systemd/sytem/wakeonpi.service
+sudo nano /etc/systemd/system/wakeonpi.service
 ```
 
 ```ini
